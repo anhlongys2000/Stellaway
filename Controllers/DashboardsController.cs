@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Stellaway.Domain.Entities;
 using Stellaway.Domain.Entities.Identities;
+using Stellaway.Domain.Enums;
 using Stellaway.DTOs;
 using Stellaway.Persistence.Data;
 using Stellaway.Repositories;
@@ -26,11 +27,16 @@ public class DashboardsController(
         var firstDayLastMonth = firstDayThisMonth.AddMonths(-1);
         var firstDayNextMonth = firstDayThisMonth.AddMonths(1);
         var firstDayThisMonthForLastCheck = firstDayThisMonth;
+        int currentYear = DateTimeOffset.UtcNow.Year;
 
-        var currentMonthRevenue = (await _bookingRepository.FindAsync(b => b.CreatedAt >= firstDayThisMonth && b.CreatedAt < firstDayNextMonth))
+        var currentMonthRevenue = (await _bookingRepository.FindAsync(b => (
+                b.CreatedAt >= firstDayThisMonth && b.CreatedAt < firstDayNextMonth)
+                && b.Status == BookingStatus.Completed))
             .Sum(b => b.TotalPrice);
 
-        var lastMonthRevenue = (await _bookingRepository.FindAsync(b => b.CreatedAt >= firstDayLastMonth && b.CreatedAt < firstDayThisMonth))
+        var lastMonthRevenue = (await _bookingRepository.FindAsync(b =>
+                (b.CreatedAt >= firstDayLastMonth && b.CreatedAt < firstDayThisMonth) &&
+                b.Status == BookingStatus.Completed))
                 .Sum(b => b.TotalPrice);
 
         double percentChange = 0;
@@ -48,12 +54,15 @@ public class DashboardsController(
 
         // Vé đã bán trong tháng này
         var currentCount = await _context.Tickets
-            .Where(t => t.CreatedAt >= firstDayThisMonth && t.CreatedAt < firstDayNextMonth)
+            .Where(t => (t.CreatedAt >= firstDayThisMonth && t.CreatedAt < firstDayNextMonth) &&
+                         t.Booking.Status == BookingStatus.Completed)
             .CountAsync();
 
         // Vé đã bán trong tháng trước
         var lastMonthCount = await _context.Tickets
-            .Where(t => t.CreatedAt >= firstDayLastMonth && t.CreatedAt < firstDayThisMonthForLastCheck)
+            .Where(t => (t.CreatedAt >=
+                    firstDayLastMonth && t.CreatedAt < firstDayThisMonthForLastCheck) &&
+                    t.Booking.Status == BookingStatus.Completed)
             .CountAsync();
 
         double percentTicketChange = 0;
@@ -120,12 +129,32 @@ public class DashboardsController(
             Difference = currentEventCount - lastMonthEventCount
         };
 
+        var revenueInYear = await _context.Bookings
+          .Where(t => t.CreatedAt!.Value.Year == currentYear && t.Status == BookingStatus.Completed)
+          .GroupBy(t => t.CreatedAt!.Value.Month)
+          .Select(g => new MonthlyRevenue
+          {
+              Month = g.Key,
+              Total = g.Sum(t => t.TotalPrice)
+          })
+          .ToListAsync();
+
+        // Đảm bảo có đủ 12 tháng (có thể có tháng không có dữ liệu)
+        var result = Enumerable.Range(1, 12)
+            .Select(m => new MonthlyRevenue
+            {
+                Month = m,
+                Total = revenueInYear.FirstOrDefault(x => x.Month == m)?.Total ?? 0
+            })
+            .ToList();
+
         return Ok(new DashboardResponse
         {
             Revenue = revenue,
             TicketStatistic = ticketStatistic,
             UserStatistic = userStatistic,
-            EventStatistic = eventStatistic
+            EventStatistic = eventStatistic,
+            MonthlyRevenues = result
 
         });
     }
