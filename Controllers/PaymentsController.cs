@@ -46,7 +46,7 @@ public class PaymentsController(
         {
             booking.Status = BookingStatus.Completed;
 
-            var content = await System.IO.File.ReadAllTextAsync("wwwroot/Templates/Email/ReservationConfirmation.html");
+            var content = await System.IO.File.ReadAllTextAsync("wwwroot/Templates/Email/mail.html");
             content = content
                 .Replace("{0}", booking.User.FullName)
                 .Replace("{1}", booking.Tickets.Count.ToString())
@@ -99,7 +99,7 @@ public class PaymentsController(
         {
             booking.Status = BookingStatus.Completed;
 
-            var content = await System.IO.File.ReadAllTextAsync("wwwroot/Templates/Email/ReservationConfirmation.html");
+            var content = await System.IO.File.ReadAllTextAsync("wwwroot/Templates/Email/mail.html");
             content = content
                 .Replace("{0}", booking.User.FullName)
                 .Replace("{1}", booking.Tickets.Count.ToString())
@@ -142,6 +142,14 @@ public class PaymentsController(
         if (await _scheduleRepository.ExistsByAsync(_ => _.Id == request.ScheduleId && now >= _.StartTime))
         {
             throw new BadRequestException("không thể book lịch đã diễn ra");
+
+        }
+
+        if (await _bookingRepository.ExistsByAsync(
+            _ => _.ScheduleId == request.ScheduleId &&
+            _.Tickets.Any(_ => request.Tickets.Select(_ => _.SeatId).Contains(_.SeatId))))
+        {
+            throw new BadRequestException("Ghế này đã được book");
 
         }
 
